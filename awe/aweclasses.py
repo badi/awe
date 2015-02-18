@@ -39,17 +39,21 @@ class SimState(object):
         assert x.shape == v.shape
         t = 0 if t is None else t
         self.x, self.v, self.t = x, v, t
+        self._gps = self._to_gps()
 
     def __eq__(self, other):
         return self.x == other.x \
           and  self.v == other.v \
           and  self.t == other.t
 
-    def to_gps(self):
+    def _to_gps(self):
         x = mdprep.gps.array2str(self.x)
         v = mdprep.gps.array2str(self.v)
         t = mdprep.gps.scalar2str(self.t)
         return x, v, t
+
+    def to_gps(self):
+        return self._gps
 
     @classmethod
     def from_gps(cls, xstr, vstr, tstr):
