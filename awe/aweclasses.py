@@ -11,17 +11,66 @@ from util import typecheck, returns
 import structures, util
 
 import trax
+import mdprep
 
 import numpy as np
 import cPickle as pickle
 
 import os, time, shutil
 from collections import defaultdict
+import shutil
 
 
 _WALKER_ID = 0
 _DEFAULT_COLOR = -1
 DEFAULT_CORE = -1
+
+class SimState(object):
+
+    def __init__(self, x=None, v=None, t=None):
+        """
+        Input:
+          - x: :: NxD array of positions
+          - v: :: NxD array of velocities
+          - t  :: float time
+        """
+        assert x is not None
+        assert v is not None
+        assert x.shape == v.shape
+        t = 0 if t is None else t
+        self.x, self.v, self.t = x, v, t
+
+    def __eq__(self, other):
+        return self.x == other.x \
+          and  self.v == other.v \
+          and  self.t == other.t
+
+    def to_gps(self):
+        x = mdprep.gps.array2str(self.x)
+        v = mdprep.gps.array2str(self.v)
+        t = mdprep.gps.scalar2str(self.t)
+        return x, v, t
+
+    @classmethod
+    def from_gps(cls, xstr, vstr, tstr):
+        x = mdprep.gps.str2array(xstr)
+        v = mdprep.gps.str2array(vstr)
+        t = mdprep.gps.str2scalar(tstr, float)
+        return cls(x=x, v=v, t=t)
+
+    def __len__(self):
+        "Number of atoms"
+        return len(self.x)
+
+    @property
+    def dim(self):
+        return self.x.shape[-1]
+
+    def fuzz(self):
+        return self.__class__(x=self.x,
+                              v=self.v + np.random.random(self.v.shape),
+                              t=self.t)
+        
 
 class Walker(object):
 
@@ -31,8 +80,8 @@ class Walker(object):
 
     Relevant fields are:
 
-      *start*      : starting coordinates
-      *end*        : ending coordinates
+      *start*      : starting state
+      *end*        : ending state
       *assignment* : int
     """
 
@@ -78,7 +127,7 @@ class Walker(object):
 
         cid = cellid or self._cellid
 
-        return Walker(start      = self._end,
+        return Walker(start      = self._end.fuzz(),
                       end        = None,
                       assignment = self._assignment,
                       color      = self._color,
@@ -125,7 +174,7 @@ class Walker(object):
     def natoms(self):     return len(self._coords)
 
     @property
-    def ndim(self):       return self._coords.shape[-1]
+    def ndim(self):       return self._coords.dim
 
     @property
     def _coords(self):
@@ -233,16 +282,19 @@ class AWE(object):
             for a in parms.iterkeys():
                 setattr(self, a, parms[a])
 
-
     def _submit(self):
 
-        for walker in self.system.walkers:
+        ws = self.system.walkers
+        print time.asctime(), 'Submitting {} walkers'.format(len(ws))
+        for walker in ws:
             if walker.end is None:
                 task = self._new_task(walker)
                 self.wq.submit(task)
+        print time.asctime(), 'Done submitting walkers'
 
-    @typecheck(Walker)
-    @returns(workqueue.WQ.Task)
+
+    # @typecheck(Walker)
+    # @returns(workqueue.WQ.Task)
     def _new_task(self, walker):
 	self.currenttask += 1
         task = self.wq.new_task()
@@ -276,7 +328,6 @@ class AWE(object):
         self.stats.time_barrier('stop')
         self.wq.clear()
         print system
-
 
     def _resample(self):
 
@@ -338,7 +389,7 @@ class AWE(object):
     # @returns(str)
     def encode_task_tag(self, walker):
         tag = '%(outfile)s|%(cellid)d|%(weight)f|%(walkerid)d' % {
-            'outfile' : os.path.join(self.wq.tmpdir, workqueue.RESULT_NAME),
+            'outfile' : workqueue.RESULT_NAME,
             'cellid'  : walker.assignment,
             'weight'  : walker.weight,
             'walkerid' : walker.id}
@@ -357,42 +408,76 @@ class AWE(object):
 
         
 
-    @typecheck(int, workqueue.WQ.Task)
+    def _task_files_dir(self, task):
+        return os.path.join('debug', 'tasks')
+
+    # @typecheck(int, workqueue.WQ.Task)
     def marshal_to_task(self, walker, task):
         
+        tfd = self._task_files_dir(task)
+        if not os.path.exists(tfd):
+            os.makedirs(tfd)
 
-        ### create the pdb
-        top        = self.system.topology
-        top.coords = walker.start
-        pdbdat     = str(top)
+        # xf, vf, tf = [os.path.join(tfd, '{}0.gps'.format(n)) for n in 'x v t'.split()]
+        # for fn, dat in zip([xf, vf, tf], walker.start.to_gps()):
+        #     with open(fn, 'w') as fd: fd.write(dat)
+        #     task.specify_input_file(fn, os.path.basename(fn), cache=False)
+
+        task.specify_input_file(self.system.topology, cache=True)
+
+        x, v, t = walker.start.to_gps()
+        task.specify_buffer(x, 'x0.gps', cache=False)
+        task.specify_buffer(v, 'v0.gps', cache=False)
+        task.specify_buffer(t, 't0.gps', cache=False)
+
+
+        # ### create the pdb
+        # top        = self.system.topology
+        # top.coords = walker.start
+        # pdbdat     = str(top)
 
         ### send walker to worker
+
+        # with open(os.path.join(tfd, workqueue.WORKER_WALKER_NAME), 'wb') as fd:
+        #     pickle.dump(walker, fd, protocol=pickle.HIGHEST_PROTOCOL)
+        #     task.specify_input_file(fd.name, os.path.basename(fd.name), cache=False)
+
         wdat = pickle.dumps(walker)
-        task.specify_buffer(pdbdat, workqueue.WORKER_POSITIONS_NAME+"."+str(self.currenttask), cache=False)
-        task.specify_buffer(wdat  , workqueue.WORKER_WALKER_NAME+"."+str(self.currenttask)   , cache=False)
+        # task.specify_buffer(pdbdat, workqueue.WORKER_POSITIONS_NAME+"."+str(self.currenttask), cache=False)
+        task.specify_buffer(wdat  , workqueue.WORKER_WALKER_NAME   , cache=False)
 
         ### specify output
         self.specify_task_output_file(task)
 
+    def task_output_filename(self, task):
+        tfd = self._task_files_dir(task)
+        return os.path.join(tfd, task.tag)
+
     def specify_task_output_file(self, task):
-        output = os.path.join(self.wq.tmpdir, task.tag)
-        task.specify_output_file(output, remote_name = workqueue.WORKER_RESULTS_NAME+"."+str(self.currenttask), cache=False)
+        output = self.task_output_filename(task)
+        # task.specify_output_file(output, remote_name = workqueue.WORKER_RESULTS_NAME+"."+str(self.currenttask), cache=False)
+        task.specify_output_file(output, remote_name = workqueue.WORKER_RESULTS_NAME, cache=False)
 
     @typecheck(workqueue.WQ.Task)
     @returns(Walker)
     def marshal_from_task(self, result):
 
         import tarfile
-        tar = tarfile.open(result.tag)
+        outfile = self.task_output_filename(result)
+        tar = tarfile.open(outfile)
         try:
+            x = tar.extractfile('x1.gps').read()
+            v = tar.extractfile('v1.gps').read()
+            t = tar.extractfile('t1.gps').read()
             walkerstr         = tar.extractfile(workqueue.WORKER_WALKER_NAME).read()
-            pdbstring         = tar.extractfile(workqueue.RESULT_POSITIONS).read()
+            # pdbstring         = tar.extractfile(workqueue.RESULT_POSITIONS).read()
             cellstring        = tar.extractfile(workqueue.RESULT_CELL     ).read()
         finally:
             tar.close()
 
-        pdb               = structures.PDB(pdbstring)
-        coords            = pdb.coords
+        # pdb               = structures.PDB(pdbstring)
+        # coords            = pdb.coords
+        simstate          = SimState.from_gps(x, v, t)
         cellid            = int(cellstring)
 
         walker            = pickle.loads(walkerstr)
@@ -406,10 +491,10 @@ class AWE(object):
                                       'iteration %s from %s to %s %s' % \
                                           (self.iteration, walker.assignment, cellid, transition))
 
-        walker.end        = coords
+        walker.end        = simstate
         walker.assignment = cellid
 
-        os.unlink(result.tag)
+        shutil.rmtree(self._task_files_dir(result))
         return walker
 
 
@@ -472,7 +557,7 @@ class System(object):
 
 
     @property
-    def topology(self): return self._topology.copy()
+    def topology(self): return self._topology
 
     @property
     @returns(list)

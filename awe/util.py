@@ -9,6 +9,7 @@ See the file COPYING for details.
 
 import traceback
 import os
+from functools import wraps
 
 class TypeException (Exception): pass
 
@@ -32,6 +33,7 @@ class _typecheck(object):
              raise TypeException, '%s expected: %s, but got: %s' % (name or 'param %s' % arg, expected, typ)
 
     def __call__(self, fn):
+        @wraps(fn)
         def wrapped(*args, **kws):
  
             try:
@@ -53,8 +55,6 @@ class _typecheck(object):
 
             return fn(*args,**kws)
 
-        wrapped.func_name = fn.func_name
-        wrapped.func_doc = fn.func_doc
         return wrapped
 
 class returns(object):
@@ -69,6 +69,7 @@ class returns(object):
         return typ is self.expected
 
     def __call__(self, fn):
+        @wraps(fn)
         def wrapped(*args, **kws):
             result = fn(*args, **kws)
             if self.typecheck(result):
@@ -80,7 +81,6 @@ class returns(object):
                 raise TypeError, 'Result of %s(*%s, **%s) should be %s but is %s' % \
                     (fn, args, kws, self.expected, type(result))
 
-        wrapped.func_name = fn.func_name
         wrapped.func_doc = '%s -> %s\n\n%s' % (fn.func_name, self.expected, fn.func_doc or '')
         return wrapped
 
@@ -98,11 +98,10 @@ def typecheckfn(*args, **kws):
 
 
 def deprecated(fn):
+    @wraps(fn)
     def wrapped(*args, **kws):
         print 'WARNING: call to deprecated function: %s' % fn.func_name
         return fn(*args, **kws)
-    wrapped.func_name = fn.func_name
-    wrapped.func_doc  = fn.func_doc
     return wrapped
 
 

@@ -11,7 +11,7 @@ except ImportError:
 
 class SimpleTransactional(base.AbstractTransactional):
 
-	def __init__(self, picklemode=0, pickleprotocol=0, **kws):
+	def __init__(self, picklemode=0, pickleprotocol=pickle.HIGHEST_PROTOCOL, **kws):
 		assert type(picklemode) is int
 		assert picklemode >= 0
 		self._picklemode = picklemode

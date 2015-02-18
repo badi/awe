@@ -16,7 +16,7 @@ import io
 import resample
 import structures
 
-from aweclasses import Walker, AWE, Cell, System, SinkStates
+from aweclasses import SimState, Walker, AWE, Cell, System, SinkStates
 from workqueue import Config
 from stats import time
 from structures import PDB

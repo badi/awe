@@ -20,6 +20,7 @@ def calFlux(trans,tlagIter):
     return flux
 
 def extractTrans(trans):
+    import pdb;pdb.set_trace()
     ftrans = []
     btrans = []
     #forward flux blue to red
@@ -30,16 +31,35 @@ def extractTrans(trans):
         btrans.append(trans[i][0]/(trans[i][0]+trans[i][1]))
     return (ftrans,btrans)
 
+def computeFluxBetween(T, s, t, nc):
+    assert s < nc
+    assert t < nc
+    F = -np.ones(len(T))
+    for i,it in enumerate(T):
+        f = it[t,s] / it[t].sum()
+        F[i] = f
+    return F
+
 if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option('-i','--inputfile',dest='infile',help='input file name, default:color-transition-matrix.csv',default='color-transition-matrix.csv')
     parser.add_option('-l','--interval',type='float',dest='interval',help='micro-/nano-/pico-/femto- seconds per iteration, default:1',default=1)
     parser.add_option('-o','--outputdir',dest='odir',help='directory of output file,default:./',default='./')
+    parser.add_option('-c', '--colors', type='int')
 
     args = parser.parse_args()
     infile = args[0].infile
     inter = args[0].interval
     odir = args[0].odir
+    colors = args[0].colors
+
+    # loat tmat
+    T = np.loadtxt(infile, delimiter=',')
+    T = T.reshape((len(T)/colors, colors, colors))
+    F = computeFluxBetween(T, 0, 2, colors)
+    print F
+    print F / inter
+    sys.exit(1)
 
     if not os.path.isdir(odir):
         os.makedirs(odir)

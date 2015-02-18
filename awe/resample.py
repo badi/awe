@@ -170,12 +170,12 @@ class MultiColor(OneColor):
         self.partition   = partition
         ncolors          = partition.ncolors
         self.transitions = np.zeros((ncolors, ncolors))
-	self.iteration = 1
+        self.iteration = 1
 
         self.cellweights_path = os.path.join(OUTPUT_DIR, 'cell-weights.csv')
         makedirs_parent(self.cellweights_path)
-	of = open(self.cellweights_path,'a')
-	of.write('%iteration,cellid,color,total_weight \n')
+        of = open(self.cellweights_path,'a')
+        of.write('%iteration,cellid,color,total_weight \n')
         of.close()
 
         self.tmat_path = os.path.join(OUTPUT_DIR, 'color-transition-matrix.csv')
@@ -214,7 +214,7 @@ class MultiColor(OneColor):
                 oldcolor = newcolor = w.color
 
             trans[oldcolor, newcolor] += w.weight
-        self.transitions = np.append(self.transitions,trans,axis=0)
+        self.transitions = trans #np.append(self.transitions,trans,axis=0)
 
         ### resample individual colors using OneColor algorithm
         newsystem = aweclasses.System(topology=system.topology)
@@ -229,9 +229,9 @@ class MultiColor(OneColor):
 	    thiscell = system.filter_by_cell(cell)
 	    for color in thiscell.colors:
 	        thiscolor = thiscell.filter_by_color(color)
-		of.write(str(self.iteration)+','+str(cell.id)+','+str(color)+','+str(sum(thiscolor.weights))+'\n')
-	of.close()
-	self.iteration += 1
+            of.write(str(self.iteration)+','+str(cell.id)+','+str(color)+','+str(sum(thiscolor.weights))+'\n')
+        of.close()
+        self.iteration += 1
 
         self.save_transitions(self.tmat_path)
 
@@ -239,9 +239,10 @@ class MultiColor(OneColor):
 
     def save_transitions(self, path):
         print time.asctime(), 'Saving transition matrix to', repr(path)
-        fd = open(path, 'w')
+        fd = open(path, 'a')
         try:
-            fd.write(self.tmat_header)
+            if self.iteration == 1:
+                fd.write(self.tmat_header)
             np.savetxt(fd, self.transitions, delimiter=',')
         finally:
             fd.close()
