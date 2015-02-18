@@ -494,7 +494,7 @@ class AWE(object):
         walker.end        = simstate
         walker.assignment = cellid
 
-        shutil.rmtree(self._task_files_dir(result))
+        os.unlink(outfile)
         return walker
 
 
